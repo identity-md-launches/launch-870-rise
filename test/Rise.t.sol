@@ -13,6 +13,7 @@ contract RejectsCallbacks {
     }
 }
 
+/// forge-config: default.fuzz.runs = 1000
 contract RiseTest is Test {
     uint256 private constant SUPPLY = 1_000_000_000e18;
     address private constant ALICE = address(0xA11CE);
@@ -318,6 +319,33 @@ contract RiseTest is Test {
         token.transfer(BOB, balance + excess);
         assertEq(token.balanceOf(ALICE), balance);
         assertEq(token.balanceOf(BOB), 0);
+        assertEq(token.totalSupply(), SUPPLY);
+    }
+
+    function testFuzz_anyNonzeroRecipientReceivesExactAmount(address recipient, uint256 amount) public {
+        recipient = address(uint160(bound(uint256(uint160(recipient)), 1, type(uint160).max)));
+        amount = bound(amount, 0, SUPPLY);
+        vm.expectEmit(true, true, false, true, address(token));
+        emit IERC20.Transfer(address(this), recipient, amount);
+        assertTrue(token.transfer(recipient, amount));
+        bool selfTransfer = recipient == address(this);
+        assertEq(token.balanceOf(recipient), selfTransfer ? SUPPLY : amount);
+        assertEq(token.balanceOf(address(this)), selfTransfer ? SUPPLY : SUPPLY - amount);
+        assertEq(token.totalSupply(), SUPPLY);
+    }
+
+    function testFuzz_anyNonzeroRecipientCanReceiveDelegatedTransfer(address recipient, uint256 amount) public {
+        recipient = address(uint160(bound(uint256(uint160(recipient)), 1, type(uint160).max)));
+        amount = bound(amount, 0, SUPPLY);
+        token.approve(SPENDER, amount);
+        vm.expectEmit(true, true, false, true, address(token));
+        emit IERC20.Transfer(address(this), recipient, amount);
+        vm.prank(SPENDER);
+        assertTrue(token.transferFrom(address(this), recipient, amount));
+        bool selfTransfer = recipient == address(this);
+        assertEq(token.balanceOf(recipient), selfTransfer ? SUPPLY : amount);
+        assertEq(token.balanceOf(address(this)), selfTransfer ? SUPPLY : SUPPLY - amount);
+        assertEq(token.allowance(address(this), SPENDER), 0);
         assertEq(token.totalSupply(), SUPPLY);
     }
 }
